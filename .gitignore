@@ -1,0 +1,10 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+
+# dotenv for secrets (if you store it locally)
+.env
+
+# Virtual environment folders
+venv/
+.env/
