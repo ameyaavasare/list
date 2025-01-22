@@ -2,9 +2,8 @@ import os
 import datetime
 from fastapi import FastAPI, Request, Response, status, HTTPException
 from supabase import create_client, Client
-from supabase.client import APIError
-from dotenv import load_dotenv
 from twilio.twiml.messaging_response import MessagingResponse
+from dotenv import load_dotenv
 
 # 1) Load environment variables from .env
 load_dotenv()
@@ -12,6 +11,8 @@ load_dotenv()
 # 2) Read environment variables
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")  # Optional for now
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")    # Optional for now
 
 # 3) Initialize Supabase client
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -30,59 +31,44 @@ def read_root():
 def test_supabase():
     """
     Quick check to confirm we can create a Supabase client.
+    This does NOT perform an actual database query by default.
     """
     return {"message": "Supabase client ready (not actually querying yet)."}
-
 
 @app.post("/test-insert")
 def test_insert():
     """
     Test endpoint to insert a sample record into the 'items' table.
     """
-
     try:
-        # 1) Prepare data
         now = datetime.datetime.utcnow().isoformat()
         data_to_insert = {
-            "user_id": "+1234567890",  # Fake phone number for testing
+            "user_id": "+1234567890",      # just a fake phone number for testing
             "category": "TestCategory",
             "subcategory": "TestSubcategory",
             "item": "Just a test item",
             "timestamp": now
         }
 
-        # 2) Insert into Supabase using a list (recommended)
-        response = supabase.table("items").insert([data_to_insert]).execute()
+        # Insert into Supabase
+        response = supabase.table("items").insert(data_to_insert).execute()
 
-        # 3) According to the official docs, we can check 'response.error'
-        if response.error:
-            # response.error might be a string or dict describing the error
+        # Check the status code instead of response.error
+        if response.status_code >= 400:
+            # Raise an HTTPException with whatever text Supabase returned
             raise HTTPException(
-                status_code=response.status or 400,
-                detail=f"Supabase error: {response.error}"
+                status_code=response.status_code,
+                detail=f"Supabase error: {response.text}"
             )
 
-        # 4) Also check the status
-        if response.status >= 400:
-            raise HTTPException(
-                status_code=response.status,
-                detail=f"Unexpected status from Supabase: {response.status} {response.status_text}"
-            )
-
-        # 5) If no error, response.data should contain the inserted row(s)
-        inserted = response.data  # Typically a list of inserted records
-
+        # On success, return the data Supabase inserted
         return {
             "status": "success",
-            "inserted": inserted
+            "data": response.json()  # The inserted rows
         }
 
-    except APIError as e:
-        # If supabase-py encounters a deeper error, it may raise APIError
-        raise HTTPException(status_code=400, detail=f"Supabase APIError: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @app.post("/sms")
 async def receive_sms(request: Request) -> Response:
@@ -92,15 +78,16 @@ async def receive_sms(request: Request) -> Response:
     insert into Supabase, and return a TwiML response.
     """
     form_data = await request.form()
-    from_number = form_data.get("From")
-    body_text = form_data.get("Body")
+    from_number = form_data.get("From")  # The sender's phone number
+    body_text = form_data.get("Body")    # The SMS text message
 
-    # Basic checks
+    # Basic validations
     if not from_number or not body_text:
         return _twilio_response("Error: Missing phone number or message body.", is_error=True)
 
     lines = body_text.strip().split("\n")
     if len(lines) < 2:
+        # Not enough lines => error
         return _twilio_response(
             "Error: Message should contain at least two lines:\n"
             "Line 1: category[, subcategory]\n"
@@ -108,65 +95,69 @@ async def receive_sms(request: Request) -> Response:
             is_error=True
         )
 
-    # Separate lines
     line1 = lines[0].strip()
     line2 = lines[1].strip()
 
-    # Category & subcategory
+    # Parse category/subcategory
     if "," in line1:
-        parts = line1.split(",", 1)
+        parts = line1.split(",", 1)  # Split on the first comma only
         category = parts[0].strip()
         subcategory = parts[1].strip() or None
     else:
+        # No comma => entire line is category
         category = line1
         subcategory = None
 
-    if not category or not line2:
-        return _twilio_response("Error: Missing category or item.", is_error=True)
+    # The item is line2
+    item = line2.strip()
 
+    # Validate category & item
+    if not category:
+        return _twilio_response("Error: Missing category.", is_error=True)
+    if not item:
+        return _twilio_response("Error: Missing item.", is_error=True)
+
+    # Insert into Supabase
+    now = datetime.datetime.utcnow().isoformat()
     data_to_insert = {
         "user_id": from_number,
         "category": category,
         "subcategory": subcategory,
-        "item": line2.strip(),
-        "timestamp": datetime.datetime.utcnow().isoformat()
+        "item": item,
+        "timestamp": now
     }
 
     try:
-        response = supabase.table("items").insert([data_to_insert]).execute()
-
-        if response.error:
-            # Something went wrong in the DB
-            return _twilio_response(f"Database error: {response.error}", is_error=True)
-
-        if response.status >= 400:
+        response = supabase.table("items").insert(data_to_insert).execute()
+        # Check status code instead of response.error
+        if response.status_code >= 400:
             return _twilio_response(
-                f"Unexpected status from Supabase: {response.status} {response.status_text}",
+                f"Database error: {response.text}",
                 is_error=True
             )
 
-        # success
+        # Successfully stored
         subcat_str = subcategory if subcategory else "None"
-        success_msg = (
+        success_message = (
             f"Stored:\n"
             f"Category: {category}\n"
             f"Subcategory: {subcat_str}\n"
-            f"Item: {line2}"
+            f"Item: {item}"
         )
-        return _twilio_response(success_msg)
+        return _twilio_response(success_message)
 
-    except APIError as e:
-        return _twilio_response(f"Supabase APIError: {str(e)}", is_error=True)
     except Exception as e:
         return _twilio_response(f"Unexpected error: {str(e)}", is_error=True)
 
-
 def _twilio_response(message: str, is_error: bool = False) -> Response:
     """
-    Returns TwiML so Twilio can send an SMS response back.
+    Build a TwiML response so Twilio will send an SMS back to the user.
+    We'll return 200 in all cases, because Twilio doesn't
+    strictly require a different error status code.
     """
     twiml_resp = MessagingResponse()
     twiml_resp.message(message)
+
     return Response(
         content=str(twiml_resp),
         media_type="application/xml",
