@@ -50,12 +50,23 @@ def test_insert():
             "timestamp": now
         }
 
+        # Insert into Supabase
         response = supabase.table("items").insert(data_to_insert).execute()
 
-        if response.error:
-            raise HTTPException(status_code=400, detail=response.error.get('message'))
+        # Check the status code instead of response.error
+        if response.status_code >= 400:
+            # Raise an HTTPException with whatever text Supabase returned
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"Supabase error: {response.text}"
+            )
 
-        return {"status": "success", "data": response.data}
+        # On success, return the data Supabase inserted
+        return {
+            "status": "success",
+            "data": response.json()  # The inserted rows
+        }
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -89,7 +100,7 @@ async def receive_sms(request: Request) -> Response:
 
     # Parse category/subcategory
     if "," in line1:
-        parts = line1.split(",", 1)  # Split on first comma only
+        parts = line1.split(",", 1)  # Split on the first comma only
         category = parts[0].strip()
         subcategory = parts[1].strip() or None
     else:
@@ -118,9 +129,10 @@ async def receive_sms(request: Request) -> Response:
 
     try:
         response = supabase.table("items").insert(data_to_insert).execute()
-        if response.error:
+        # Check status code instead of response.error
+        if response.status_code >= 400:
             return _twilio_response(
-                f"Database error: {response.error.get('message')}",
+                f"Database error: {response.text}",
                 is_error=True
             )
 
