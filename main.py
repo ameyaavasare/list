@@ -5,7 +5,7 @@ from supabase import create_client, Client
 from twilio.twiml.messaging_response import MessagingResponse
 from dotenv import load_dotenv
 
-# Import your Grocery Agent from the separate file
+# Import the Grocery Agent
 from agents.grocery import handle_grocery_request
 
 # 1) Load environment variables from .env
@@ -85,7 +85,7 @@ async def receive_sms(request: Request) -> Response:
         # If it matches the two-line pattern, treat it as data insertion
         return store_data_entry(from_number, body_text)
     else:
-        # Otherwise, route to an agent (e.g., Grocery Agent)
+        # Otherwise, route to an agent (Grocery, Restaurant, Movie, TV)
         answer = handle_request(from_number, body_text)
         return _twilio_response(answer)
 
@@ -148,20 +148,33 @@ def store_data_entry(from_number: str, body_text: str) -> Response:
 def handle_request(from_number: str, body_text: str) -> str:
     """
     Routes non-data-entry messages to the correct agent.
-    Currently only handling 'grocery' keywords as an example.
     """
     text_lower = body_text.lower()
+
+    # Grocery
     if "grocery" in text_lower:
         return handle_grocery_request(body_text, from_number, supabase)
+
+    # Restaurant
+    elif "restaurant" in text_lower:
+        from agents.restaurant import handle_restaurant_request
+        return handle_restaurant_request(body_text, from_number, supabase)
+
+    # Movie
+    elif "movie" in text_lower:
+        from agents.movie import handle_movie_request
+        return handle_movie_request(body_text, from_number, supabase)
+
+    # TV
+    elif "tv" in text_lower or "tv show" in text_lower:
+        from agents.tv import handle_tv_request
+        return handle_tv_request(body_text, from_number, supabase)
+
+    # Fallback
     else:
         return (
-            "Sorry, I’m not sure what you need.\n"
-            "Try sending:\n"
-            "  Grocery\n"
-            "  Bananas\n\n"
-            "OR\n"
-            "  Remove grocery bananas\n"
-            "to remove an item."
+            "Sorry, I'm not sure what you need.\n"
+            "You can say something like 'list movies' or 'remove restaurant' or 'grocery'."
         )
 
 def _twilio_response(message: str, is_error: bool = False) -> Response:
