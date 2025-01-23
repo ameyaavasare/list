@@ -46,7 +46,7 @@ def test_insert():
             "user_id": "+1234567890",      # just a fake phone number for testing
             "category": "TestCategory",
             "subcategory": "TestSubcategory",
-            "item": "Just a test item",
+            "name": "Just a test item",     # Changed from "item" to "name"
             "timestamp": now
         }
 
@@ -91,7 +91,7 @@ async def receive_sms(request: Request) -> Response:
         return _twilio_response(
             "Error: Message should contain at least two lines:\n"
             "Line 1: category[, subcategory]\n"
-            "Line 2: item",
+            "Line 2: name",
             is_error=True
         )
 
@@ -108,14 +108,14 @@ async def receive_sms(request: Request) -> Response:
         category = line1
         subcategory = None
 
-    # The item is line2
-    item = line2.strip()
+    # The name is line2
+    name = line2.strip()
 
-    # Validate category & item
+    # Validate category & name
     if not category:
         return _twilio_response("Error: Missing category.", is_error=True)
-    if not item:
-        return _twilio_response("Error: Missing item.", is_error=True)
+    if not name:
+        return _twilio_response("Error: Missing name.", is_error=True)
 
     # Insert into Supabase
     now = datetime.datetime.utcnow().isoformat()
@@ -123,7 +123,7 @@ async def receive_sms(request: Request) -> Response:
         "user_id": from_number,
         "category": category,
         "subcategory": subcategory,
-        "item": item,
+        "name": name,
         "timestamp": now
     }
 
@@ -142,7 +142,7 @@ async def receive_sms(request: Request) -> Response:
             f"Stored:\n"
             f"Category: {category}\n"
             f"Subcategory: {subcat_str}\n"
-            f"Item: {item}"
+            f"Name: {name}"
         )
         return _twilio_response(success_message)
 
