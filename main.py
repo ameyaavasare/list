@@ -136,14 +136,7 @@ async def receive_sms(request: Request) -> Response:
             )
 
         # Successfully stored
-        subcat_str = subcategory if subcategory else "None"
-        success_message = (
-            f"Stored:\n"
-            f"Category: {category}\n"
-            f"Subcategory: {subcat_str}\n"
-            f"Name: {name}"
-        )
-        return _twilio_response(success_message)
+        return _twilio_response("Stored!")
 
     except Exception as e:
         return _twilio_response(f"Unexpected error: {str(e)}", is_error=True)
