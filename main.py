@@ -5,6 +5,9 @@ from supabase import create_client, Client
 from twilio.twiml.messaging_response import MessagingResponse
 from dotenv import load_dotenv
 
+# Import your Grocery Agent from the separate file
+from agents.grocery import handle_grocery_request
+
 # 1) Load environment variables from .env
 load_dotenv()
 
@@ -19,6 +22,7 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # 4) Initialize FastAPI
 app = FastAPI()
+
 
 @app.get("/")
 def read_root():
@@ -44,26 +48,23 @@ def test_insert():
         now = datetime.datetime.utcnow().isoformat()
         data_to_insert = {
             "user_id": "+1234567890",      # just a fake phone number for testing
-            "category": "TestCategory",
-            "subcategory": "TestSubcategory",
-            "name": "Just a test item",     # Changed from "item" to "name"
+            "category": "testcategory",
+            "subcategory": "testsubcategory",
+            "name": "Just a test item",
             "timestamp": now
         }
 
         # Insert into Supabase
         response = supabase.table("items").insert(data_to_insert).execute()
-
-        # Check if there's data in the response
         if not response.data:
             raise HTTPException(
                 status_code=400,
                 detail="Supabase error: No data returned"
             )
 
-        # On success, return the data
         return {
             "status": "success",
-            "data": response.data  # Access .data directly
+            "data": response.data
         }
 
     except Exception as e:
@@ -73,8 +74,9 @@ def test_insert():
 async def receive_sms(request: Request) -> Response:
     """
     Twilio will send an HTTP POST (form-encoded) to this endpoint
-    whenever an SMS is received. We'll parse the message, validate it,
-    insert into Supabase, and return a TwiML response.
+    whenever an SMS is received. We'll parse the message and either:
+      1) Attempt "data entry" if it fits the two-line format
+      2) Otherwise, route to our handle_request function
     """
     form_data = await request.form()
     from_number = form_data.get("From")  # The sender's phone number
@@ -84,39 +86,54 @@ async def receive_sms(request: Request) -> Response:
     if not from_number or not body_text:
         return _twilio_response("Error: Missing phone number or message body.", is_error=True)
 
-    lines = body_text.strip().split("\n")
-    if len(lines) < 2:
-        # Not enough lines => error
-        return _twilio_response(
-            "Error: Message should contain at least two lines:\n"
-            "Line 1: category[, subcategory]\n"
-            "Line 2: name",
-            is_error=True
-        )
+    # Decide if this looks like "data entry"
+    if is_data_entry_format(body_text):
+        # If it matches the two-line pattern, treat it as data insertion
+        return store_data_entry(from_number, body_text)
+    else:
+        # Otherwise, route to an agent (e.g., Grocery Agent)
+        answer = handle_request(from_number, body_text)
+        return _twilio_response(answer)
 
+def is_data_entry_format(body_text: str) -> bool:
+    """
+    Checks if the incoming text has at least two lines,
+    which we treat as 'category[, subcategory]' and 'name'.
+    Example:
+      Grocery
+      Bananas
+    or
+      Grocery, produce
+      Bananas
+    """
+    lines = body_text.strip().split("\n")
+    return len(lines) >= 2
+
+def store_data_entry(from_number: str, body_text: str) -> Response:
+    """
+    Parse the text as 'category[, subcategory]' on line1, and 'name' on line2,
+    then store it in Supabase. Categories and subcategories are case-insensitive,
+    so we store them in lowercase.
+    """
+    lines = body_text.strip().split("\n")
     line1 = lines[0].strip()
     line2 = lines[1].strip()
 
-    # Parse category/subcategory
     if "," in line1:
-        parts = line1.split(",", 1)  # Split on the first comma only
-        category = parts[0].strip()
-        subcategory = parts[1].strip() or None
+        parts = line1.split(",", 1)
+        category = parts[0].strip().lower()  # convert to lowercase
+        subcategory_part = parts[1].strip().lower()
+        subcategory = subcategory_part if subcategory_part else None
     else:
-        # No comma => entire line is category
-        category = line1
+        category = line1.lower()
         subcategory = None
 
-    # The name is line2
-    name = line2.strip()
+    name = line2.strip()  # keep the name as typed
 
-    # Validate category & name
-    if not category:
-        return _twilio_response("Error: Missing category.", is_error=True)
-    if not name:
-        return _twilio_response("Error: Missing name.", is_error=True)
+    # Validate
+    if not category or not name:
+        return _twilio_response("Error: Missing category or name.", is_error=True)
 
-    # Insert into Supabase
     now = datetime.datetime.utcnow().isoformat()
     data_to_insert = {
         "user_id": from_number,
@@ -128,18 +145,33 @@ async def receive_sms(request: Request) -> Response:
 
     try:
         response = supabase.table("items").insert(data_to_insert).execute()
-        # Check if there's data in the response
         if not response.data:
-            return _twilio_response(
-                "Database error: No data returned",
-                is_error=True
-            )
-
-        # Successfully stored
+            return _twilio_response("Database error: No data returned", is_error=True)
         return _twilio_response("Stored!")
-
     except Exception as e:
         return _twilio_response(f"Unexpected error: {str(e)}", is_error=True)
+
+def handle_request(from_number: str, body_text: str) -> str:
+    """
+    Routes non-data-entry messages to the correct agent.
+    Currently only handling 'grocery' keywords as an example.
+    """
+    text_lower = body_text.lower()
+
+    # If "grocery" is mentioned, pass to the grocery agent
+    if "grocery" in text_lower:
+        return handle_grocery_request(body_text, from_number, supabase)
+    else:
+        # No recognized keywords
+        return (
+            "Sorry, I’m not sure what you need.\n"
+            "Try sending:\n"
+            "  Grocery\n"
+            "  Bananas\n\n"
+            "OR\n"
+            "  Remove grocery bananas\n"
+            "to remove an item."
+        )
 
 def _twilio_response(message: str, is_error: bool = False) -> Response:
     """
@@ -149,7 +181,6 @@ def _twilio_response(message: str, is_error: bool = False) -> Response:
     """
     twiml_resp = MessagingResponse()
     twiml_resp.message(message)
-
     return Response(
         content=str(twiml_resp),
         media_type="application/xml",
