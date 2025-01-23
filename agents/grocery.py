@@ -13,7 +13,7 @@ def handle_grocery_request(body_text: str, user_id: str, supabase: Client) -> st
     if "list" in lower_text:
         items = supabase.table("items") \
             .select("*") \
-            .eq("category", "Grocery") \
+            .eq("category", "grocery") \
             .execute().data
 
         if not items:
@@ -25,29 +25,24 @@ def handle_grocery_request(body_text: str, user_id: str, supabase: Client) -> st
         return "\n".join(response_lines)
 
     # 2) REMOVE logic
-    # Check if user typed exactly "remove grocery" or "remove grocery something..."
     if "remove grocery" in lower_text:
-        # Try to parse an item after "remove grocery"
-        # e.g. "remove grocery bananas"
-        # We'll split on "remove grocery" and see what's left
-        remainder = lower_text.split("remove grocery", 1)[1].strip()  # text after 'remove grocery'
-        
+        # We'll split on "remove grocery" and see if there's an item name after
+        remainder = lower_text.split("remove grocery", 1)[1].strip()
+
         if not remainder:
-            # If there's nothing after, remove ALL grocery items (all users)
+            # If there's nothing after, remove ALL grocery items for ALL users
             supabase.table("items") \
                 .delete() \
-                .eq("category", "Grocery") \
+                .eq("category", "grocery") \
                 .execute()
             return "All grocery items removed for all users!"
         else:
-            # There's some text after "remove grocery"
-            # We'll treat that as the name of the item to remove
-            item_name_to_remove = remainder  # e.g. "bananas"
-            # The original item name stored in the DB is case-sensitive
-            # We do an exact match for simplicity
+            # e.g. "remove grocery bananas"
+            # We'll do an exact match on the 'name' column
+            item_name_to_remove = remainder
             supabase.table("items") \
                 .delete() \
-                .eq("category", "Grocery") \
+                .eq("category", "grocery") \
                 .eq("name", item_name_to_remove) \
                 .execute()
             return f"Removed grocery item: {item_name_to_remove}"

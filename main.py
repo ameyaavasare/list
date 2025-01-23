@@ -23,7 +23,6 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 # 4) Initialize FastAPI
 app = FastAPI()
 
-
 @app.get("/")
 def read_root():
     """
@@ -86,7 +85,6 @@ async def receive_sms(request: Request) -> Response:
     if not from_number or not body_text:
         return _twilio_response("Error: Missing phone number or message body.", is_error=True)
 
-    # Decide if this looks like "data entry"
     if is_data_entry_format(body_text):
         # If it matches the two-line pattern, treat it as data insertion
         return store_data_entry(from_number, body_text)
@@ -122,15 +120,14 @@ def store_data_entry(from_number: str, body_text: str) -> Response:
     if "," in line1:
         parts = line1.split(",", 1)
         category = parts[0].strip().lower()  # convert to lowercase
-        subcategory_part = parts[1].strip().lower()
-        subcategory = subcategory_part if subcategory_part else None
+        subcat_temp = parts[1].strip().lower()
+        subcategory = subcat_temp if subcat_temp else None
     else:
         category = line1.lower()
         subcategory = None
 
-    name = line2.strip()  # keep the name as typed
+    name = line2.strip()  # keep the exact name typed by user
 
-    # Validate
     if not category or not name:
         return _twilio_response("Error: Missing category or name.", is_error=True)
 
@@ -157,12 +154,10 @@ def handle_request(from_number: str, body_text: str) -> str:
     Currently only handling 'grocery' keywords as an example.
     """
     text_lower = body_text.lower()
-
     # If "grocery" is mentioned, pass to the grocery agent
     if "grocery" in text_lower:
         return handle_grocery_request(body_text, from_number, supabase)
     else:
-        # No recognized keywords
         return (
             "Sorry, I’m not sure what you need.\n"
             "Try sending:\n"
