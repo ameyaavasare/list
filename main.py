@@ -53,18 +53,17 @@ def test_insert():
         # Insert into Supabase
         response = supabase.table("items").insert(data_to_insert).execute()
 
-        # Check the status code instead of response.error
-        if response.status_code >= 400:
-            # Raise an HTTPException with whatever text Supabase returned
+        # Check if there's data in the response
+        if not response.data:
             raise HTTPException(
-                status_code=response.status_code,
-                detail=f"Supabase error: {response.text}"
+                status_code=400,
+                detail="Supabase error: No data returned"
             )
 
-        # On success, return the data Supabase inserted
+        # On success, return the data
         return {
             "status": "success",
-            "data": response.json()  # The inserted rows
+            "data": response.data  # Access .data directly
         }
 
     except Exception as e:
@@ -129,10 +128,10 @@ async def receive_sms(request: Request) -> Response:
 
     try:
         response = supabase.table("items").insert(data_to_insert).execute()
-        # Check status code instead of response.error
-        if response.status_code >= 400:
+        # Check if there's data in the response
+        if not response.data:
             return _twilio_response(
-                f"Database error: {response.text}",
+                "Database error: No data returned",
                 is_error=True
             )
 
