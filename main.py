@@ -52,20 +52,16 @@ def test_insert():
             "name": "Just a test item",
             "timestamp": now
         }
-
-        # Insert into Supabase
         response = supabase.table("items").insert(data_to_insert).execute()
         if not response.data:
             raise HTTPException(
                 status_code=400,
                 detail="Supabase error: No data returned"
             )
-
         return {
             "status": "success",
             "data": response.data
         }
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -110,8 +106,8 @@ def is_data_entry_format(body_text: str) -> bool:
 def store_data_entry(from_number: str, body_text: str) -> Response:
     """
     Parse the text as 'category[, subcategory]' on line1, and 'name' on line2,
-    then store it in Supabase. Categories and subcategories are case-insensitive,
-    so we store them in lowercase.
+    then store it in Supabase. We convert category/subcategory/name to lowercase
+    for consistent matching later.
     """
     lines = body_text.strip().split("\n")
     line1 = lines[0].strip()
@@ -119,15 +115,16 @@ def store_data_entry(from_number: str, body_text: str) -> Response:
 
     if "," in line1:
         parts = line1.split(",", 1)
-        category = parts[0].strip().lower()  # convert to lowercase
-        subcat_temp = parts[1].strip().lower()
-        subcategory = subcat_temp if subcat_temp else None
+        category = parts[0].strip().lower()   # always store in lowercase
+        subcategory_raw = parts[1].strip().lower()
+        subcategory = subcategory_raw if subcategory_raw else None
     else:
         category = line1.lower()
         subcategory = None
 
-    name = line2.strip()  # keep the exact name typed by user
+    name = line2.strip().lower()  # also store name in lowercase
 
+    # Validate
     if not category or not name:
         return _twilio_response("Error: Missing category or name.", is_error=True)
 
@@ -154,7 +151,6 @@ def handle_request(from_number: str, body_text: str) -> str:
     Currently only handling 'grocery' keywords as an example.
     """
     text_lower = body_text.lower()
-    # If "grocery" is mentioned, pass to the grocery agent
     if "grocery" in text_lower:
         return handle_grocery_request(body_text, from_number, supabase)
     else:
