@@ -27,27 +27,34 @@ def handle_grocery_request(body_text: str, user_id: str, supabase: Client) -> st
 
     # 2) REMOVE logic
     if "remove grocery" in lower_text:
-        # e.g. "remove grocery bananas"
         remainder = lower_text.split("remove grocery", 1)[1].strip()
 
         if not remainder:
             # If there's nothing after, remove ALL grocery items
-            supabase.table("items") \
+            result = supabase.table("items") \
                 .delete() \
                 .eq("category", "grocery") \
                 .execute()
             return "All grocery items removed!"
         else:
             # There's some text after "remove grocery"
-            # We'll do an exact match on the 'name' column
-            item_name_to_remove = remainder
-            # Because we stored name in lowercase, remainder is also lowercase
-            supabase.table("items") \
-                .delete() \
+            # First get the item with case-insensitive search
+            items = supabase.table("items") \
+                .select("*") \
                 .eq("category", "grocery") \
-                .eq("name", item_name_to_remove) \
+                .ilike("name", remainder) \
                 .execute()
-            return f"Removed grocery item: {item_name_to_remove}"
+            
+            if items.data:
+                # If we found matching items, delete them
+                supabase.table("items") \
+                    .delete() \
+                    .eq("category", "grocery") \
+                    .ilike("name", remainder) \
+                    .execute()
+                return f"Removed grocery item: {remainder}"
+            else:
+                return f"No grocery item found matching: {remainder}"
 
     # If we reach here, we didn't match any known commands
     return (
