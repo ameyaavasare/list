@@ -13,7 +13,7 @@ def handle_grocery_request(body_text: str, user_id: str, supabase: Client) -> st
     if "list" in lower_text:
         items = supabase.table("items") \
             .select("*") \
-            .eq("category", "grocery") \
+            .eq("category", "Grocery") \
             .execute().data
 
         if not items:
@@ -36,7 +36,7 @@ def handle_grocery_request(body_text: str, user_id: str, supabase: Client) -> st
             # If there's nothing after, remove ALL grocery items (all users)
             supabase.table("items") \
                 .delete() \
-                .eq("category", "grocery") \
+                .eq("category", "Grocery") \
                 .execute()
             return "All grocery items removed for all users!"
         else:
@@ -47,7 +47,7 @@ def handle_grocery_request(body_text: str, user_id: str, supabase: Client) -> st
             # We do an exact match for simplicity
             supabase.table("items") \
                 .delete() \
-                .eq("category", "grocery") \
+                .eq("category", "Grocery") \
                 .eq("name", item_name_to_remove) \
                 .execute()
             return f"Removed grocery item: {item_name_to_remove}"
