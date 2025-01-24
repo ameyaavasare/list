@@ -1,5 +1,3 @@
-# generate_restaurant_embeddings.py
-
 import os
 import openai
 from supabase import create_client, Client
@@ -19,7 +17,8 @@ def generate_restaurant_embeddings():
 
     # 2) Initialize clients
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-    client = openai.OpenAI(api_key=OPENAI_API_KEY)
+    # Instead of openai.OpenAI(...), set the API key directly:
+    openai.api_key = OPENAI_API_KEY
 
     # 3) Fetch all rows and their categories
     response = supabase.table("items").select("category").execute()
@@ -56,11 +55,12 @@ def generate_restaurant_embeddings():
 
         # Call OpenAI to get the embedding vector
         try:
-            response = client.embeddings.create(
+            response = openai.Embedding.create(
                 input=text_to_embed,
                 model="text-embedding-3-small"
             )
-            vector = response.data[0].embedding  # a list of floats
+            # The embedding array is usually at response["data"][0]["embedding"]
+            vector = response["data"][0]["embedding"]
         except Exception as e:
             print(f"Error generating embedding for row {row_id}: {e}")
             continue

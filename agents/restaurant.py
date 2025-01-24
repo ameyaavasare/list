@@ -15,7 +15,8 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
     raise ValueError("OPENAI_API_KEY must be set in environment variables")
 
-client = openai.OpenAI(api_key=OPENAI_API_KEY)
+# Instead of openai.OpenAI(...), just set your API key directly:
+openai.api_key = OPENAI_API_KEY
 
 def handle_restaurant_request(body_text: str, user_id: str, supabase: Client) -> str:
     """
@@ -61,19 +62,17 @@ def handle_restaurant_request(body_text: str, user_id: str, supabase: Client) ->
     # 3) EMBEDDING-BASED RECOMMEND
     if "recommend" in lower_text:
         # STEP A: Create an embedding of the user's query
-        user_query = body_text  # or parse out the substring after "recommend"
+        user_query = body_text  # or parse out substring after "recommend"
         try:
-            embed_resp = client.embeddings.create(
+            embed_resp = openai.Embedding.create(
                 model="text-embedding-3-small",
                 input=user_query
             )
-            query_vec = embed_resp.data[0].embedding
+            query_vec = embed_resp["data"][0]["embedding"]
         except Exception as e:
             return f"Error generating embedding for query: {str(e)}"
 
         # STEP B: Vector similarity search in Supabase
-        #   This snippet uses an RPC call named "match_restaurants" you define in Postgres.
-        #   If you haven't created it, see the note below.
         try:
             # We'll request the top 3 matches
             rpc_response = supabase.rpc("match_restaurants", {
@@ -87,7 +86,6 @@ def handle_restaurant_request(body_text: str, user_id: str, supabase: Client) ->
             return f"Error performing vector search: {str(e)}"
 
         # STEP C: Build a short prompt for LLM with top matches
-        #   Include user query + the returned restaurants
         context_lines = []
         for i, row in enumerate(top_rows, start=1):
             nm = row["name"]
@@ -104,7 +102,7 @@ def handle_restaurant_request(body_text: str, user_id: str, supabase: Client) ->
         # STEP D: Feed this into OpenAI for final RAG response
         try:
             completion = openai.Completion.create(
-                model="text-davinci-003",  # or gpt-3.5-turbo etc.
+                model="text-davinci-003",  # keep your chosen model
                 prompt=prompt_for_llm,
                 max_tokens=120,
                 temperature=0.7
