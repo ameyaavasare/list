@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-openai.api_key = OPENAI_API_KEY
+client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
 def handle_restaurant_request(body_text: str, user_id: str, supabase: Client) -> str:
     """
@@ -53,11 +53,11 @@ def handle_restaurant_request(body_text: str, user_id: str, supabase: Client) ->
         # STEP A: Create an embedding of the user's query
         user_query = body_text  # or parse out the substring after "recommend"
         try:
-            embed_resp = openai.Embedding.create(
-                model="text-embedding-ada-002",
+            embed_resp = client.embeddings.create(
+                model="text-embedding-3-small",
                 input=user_query
             )
-            query_vec = embed_resp["data"][0]["embedding"]
+            query_vec = embed_resp.data[0].embedding
         except Exception as e:
             return f"Error generating embedding for query: {str(e)}"
 
