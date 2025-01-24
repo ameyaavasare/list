@@ -8,3 +8,7 @@ __pycache__/
 # Virtual environment folders
 venv/
 .env/
+
+#extract file
+zzzextract.py
+extract.txt

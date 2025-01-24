@@ -1,12 +1,18 @@
+import os
+import openai
 from supabase import Client
+from dotenv import load_dotenv
+
+load_dotenv()
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+openai.api_key = OPENAI_API_KEY
 
 def handle_restaurant_request(body_text: str, user_id: str, supabase: Client) -> str:
     """
-    Processes restaurant-related requests, mirroring grocery.py logic:
-      1) 'list' -> lists ALL restaurant items (from ALL users).
-      2) 'remove restaurant' -> deletes ALL restaurant items.
-      3) 'remove restaurant [name]' -> deletes a single restaurant item by matching [name].
-      4) 'recommend ...' -> naive placeholder to search for keywords in 'notes' (case-insensitive).
+    Updated to handle embedding-based "recommend" queries for restaurants.
+      - "list restaurants" => same as before
+      - "remove restaurant" => same as before
+      - "recommend ..." => uses vector search + LLM RAG
     """
     lower_text = body_text.lower()
 
@@ -16,7 +22,6 @@ def handle_restaurant_request(body_text: str, user_id: str, supabase: Client) ->
             .select("*") \
             .eq("category", "restaurant") \
             .execute().data
-
         if not items:
             return "No restaurant items found."
 
@@ -28,7 +33,6 @@ def handle_restaurant_request(body_text: str, user_id: str, supabase: Client) ->
     # 2) REMOVE
     if "remove restaurant" in lower_text:
         remainder = lower_text.split("remove restaurant", 1)[1].strip()
-
         if not remainder:
             supabase.table("items") \
                 .delete() \
@@ -44,44 +48,61 @@ def handle_restaurant_request(body_text: str, user_id: str, supabase: Client) ->
                 .execute()
             return f"Removed restaurant item: {item_name_to_remove}"
 
-    # 3) RECOMMEND
+    # 3) EMBEDDING-BASED RECOMMEND
     if "recommend" in lower_text:
-        # Look for known keywords like 'fancy', 'quiet', 'relaxed'.
-        keywords = []
-        if "fancy" in lower_text:
-            keywords.append("fancy")
-        if "quiet" in lower_text:
-            keywords.append("quiet")
-        if "relaxed" in lower_text:
-            keywords.append("relaxed")
-
-        if not keywords:
-            return (
-                "We need a preference to recommend a restaurant. "
-                "For example: 'recommend a fancy place'."
+        # STEP A: Create an embedding of the user's query
+        user_query = body_text  # or parse out the substring after "recommend"
+        try:
+            embed_resp = openai.Embedding.create(
+                model="text-embedding-ada-002",
+                input=user_query
             )
+            query_vec = embed_resp["data"][0]["embedding"]
+        except Exception as e:
+            return f"Error generating embedding for query: {str(e)}"
 
-        recommended_items = []
-        for kw in keywords:
-            # Use .ilike(...) for case-insensitive matching
-            results = supabase.table("items") \
-                .select("*") \
-                .eq("category", "restaurant") \
-                .ilike("notes", f"%{kw}%") \
-                .execute().data
-            if results:
-                recommended_items.extend(results)
+        # STEP B: Vector similarity search in Supabase
+        #   This snippet uses an RPC call named "match_restaurants" you define in Postgres.
+        #   If you haven't created it, see the note below.
+        try:
+            # We'll request the top 3 matches
+            rpc_response = supabase.rpc("match_restaurants", {
+                "query_embedding": query_vec,
+                "match_count": 3
+            }).execute()
+            if not rpc_response.data:
+                return "No relevant restaurants found via vector search."
+            top_rows = rpc_response.data
+        except Exception as e:
+            return f"Error performing vector search: {str(e)}"
 
-        if recommended_items:
-            response_lines = [
-                f"Recommended restaurants (found {len(recommended_items)} matches):"
-            ]
-            for i, item in enumerate(recommended_items, start=1):
-                notes = item.get("notes", "N/A")
-                response_lines.append(f"{i}. {item['name']} (notes: {notes})")
-            return "\n".join(response_lines)
-        else:
-            return f"No restaurants found matching your preference(s): {', '.join(keywords)}"
+        # STEP C: Build a short prompt for LLM with top matches
+        #   Include user query + the returned restaurants
+        context_lines = []
+        for i, row in enumerate(top_rows, start=1):
+            nm = row["name"]
+            notes = row["notes"] or "No notes available"
+            context_lines.append(f"{i}) {nm}: {notes}")
+
+        prompt_for_llm = (
+            f"User Query: {user_query}\n\n"
+            f"Here are the top matching restaurants:\n"
+            + "\n".join(context_lines)
+            + "\n\nPlease provide a short recommendation that best fits the user's request."
+        )
+
+        # STEP D: Feed this into OpenAI for final RAG response
+        try:
+            completion = openai.Completion.create(
+                model="text-davinci-003",  # or gpt-3.5-turbo etc.
+                prompt=prompt_for_llm,
+                max_tokens=120,
+                temperature=0.7
+            )
+            final_answer = completion.choices[0].text.strip()
+            return final_answer
+        except Exception as e:
+            return f"Error calling LLM for final recommendation: {str(e)}"
 
     # If none matched
     return (
@@ -90,5 +111,5 @@ def handle_restaurant_request(body_text: str, user_id: str, supabase: Client) ->
         "  'list restaurants' (to list everything),\n"
         "  'remove restaurant' (remove all items),\n"
         "  'remove restaurant [item]' (remove a single item),\n"
-        "  or 'recommend a fancy place' for a naive recommendation."
+        "  or 'recommend a fancy place' for an embedding-based recommendation."
     )
