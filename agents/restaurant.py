@@ -1,10 +1,20 @@
 import os
+from pathlib import Path
 import openai
 from supabase import Client
 from dotenv import load_dotenv
 
-load_dotenv()
+# Get the project root directory (where .env should be)
+root_dir = Path(__file__).parent.parent
+dotenv_path = root_dir / '.env'
+
+# Load .env file explicitly from the root directory
+load_dotenv(dotenv_path=dotenv_path)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+if not OPENAI_API_KEY:
+    raise ValueError("OPENAI_API_KEY must be set in environment variables")
+
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
 def handle_restaurant_request(body_text: str, user_id: str, supabase: Client) -> str:
