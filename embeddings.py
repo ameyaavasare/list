@@ -1,5 +1,7 @@
 import os
-import openai
+from openai import OpenAI
+
+client = OpenAI(api_key=OPENAI_API_KEY)
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
@@ -18,11 +20,10 @@ def generate_restaurant_embeddings():
     # 2) Initialize clients
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
     # Instead of openai.OpenAI(...), set the API key directly:
-    openai.api_key = OPENAI_API_KEY
 
     # 3) Fetch all rows and their categories
     response = supabase.table("items").select("category").execute()
-    
+
     # Print all unique categories
     categories = [row['category'] for row in response.data if row.get('category')]
     print("\nAll categories found in database:")
@@ -31,7 +32,7 @@ def generate_restaurant_embeddings():
             print(f"- {category}")
     else:
         print("No categories found in the database")
-    
+
     # Now continue with the original query
     response = supabase.table("items").select("*").eq("category", "restaurant").is_("embedding", "null").execute()
     rows = response.data or []
@@ -55,12 +56,10 @@ def generate_restaurant_embeddings():
 
         # Call OpenAI to get the embedding vector
         try:
-            response = openai.Embedding.create(
-                input=text_to_embed,
-                model="text-embedding-3-small"
-            )
+            response = client.embeddings.create(input=text_to_embed,
+            model="text-embedding-3-small")
             # The embedding array is usually at response["data"][0]["embedding"]
-            vector = response["data"][0]["embedding"]
+            vector = response.data[0].embedding
         except Exception as e:
             print(f"Error generating embedding for row {row_id}: {e}")
             continue

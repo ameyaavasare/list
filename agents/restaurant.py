@@ -1,6 +1,8 @@
 import os
 from pathlib import Path
-import openai
+from openai import OpenAI
+
+client = OpenAI(api_key=OPENAI_API_KEY)
 from supabase import Client
 from dotenv import load_dotenv
 
@@ -16,7 +18,6 @@ if not OPENAI_API_KEY:
     raise ValueError("OPENAI_API_KEY must be set in environment variables")
 
 # Instead of openai.OpenAI(...), just set your API key directly:
-openai.api_key = OPENAI_API_KEY
 
 def handle_restaurant_request(body_text: str, user_id: str, supabase: Client) -> str:
     """
@@ -64,11 +65,9 @@ def handle_restaurant_request(body_text: str, user_id: str, supabase: Client) ->
         # STEP A: Create an embedding of the user's query
         user_query = body_text  # or parse out substring after "recommend"
         try:
-            embed_resp = openai.Embedding.create(
-                model="text-embedding-3-small",
-                input=user_query
-            )
-            query_vec = embed_resp["data"][0]["embedding"]
+            embed_resp = client.embeddings.create(model="text-embedding-3-small",
+            input=user_query)
+            query_vec = embed_resp.data[0].embedding
         except Exception as e:
             return f"Error generating embedding for query: {str(e)}"
 
@@ -101,12 +100,10 @@ def handle_restaurant_request(body_text: str, user_id: str, supabase: Client) ->
 
         # STEP D: Feed this into OpenAI for final RAG response
         try:
-            completion = openai.Completion.create(
-                model="text-davinci-003",  # keep your chosen model
-                prompt=prompt_for_llm,
-                max_tokens=120,
-                temperature=0.7
-            )
+            completion = client.completions.create(model="text-davinci-003",  # keep your chosen model
+            prompt=prompt_for_llm,
+            max_tokens=120,
+            temperature=0.7)
             final_answer = completion.choices[0].text.strip()
             return final_answer
         except Exception as e:
