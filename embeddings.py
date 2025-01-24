@@ -1,11 +1,39 @@
 import os
+import time
+from pathlib import Path
 from openai import OpenAI
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
-load_dotenv()
+# Get the project root directory (where .env should be)
+root_dir = Path(__file__).parent
+dotenv_path = root_dir / '.env'
+
+# Load .env file explicitly from the root directory
+load_dotenv(dotenv_path=dotenv_path)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+if not OPENAI_API_KEY:
+    raise ValueError("OPENAI_API_KEY must be set in environment variables")
+
 client = OpenAI(api_key=OPENAI_API_KEY)
+
+def generate_embedding(text: str, max_retries: int = 3) -> list[float]:
+    """Generate embedding with retry logic."""
+    for attempt in range(max_retries):
+        try:
+            response = client.embeddings.create(
+                input=text,
+                model="text-embedding-3-small"
+            )
+            embedding = response.data[0].embedding
+            if len(embedding) != 1536:  # Validate dimension
+                raise ValueError(f"Expected 1536-dimensional embedding, got {len(embedding)}")
+            return embedding
+        except Exception as e:
+            if attempt == max_retries - 1:
+                raise
+            time.sleep(1)  # Wait before retry
 
 def generate_restaurant_embeddings():
     # 1) Load environment variables
@@ -17,7 +45,6 @@ def generate_restaurant_embeddings():
 
     # 2) Initialize clients
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-    # Instead of openai.OpenAI(...), set the API key directly:
 
     # 3) Fetch all rows and their categories
     response = supabase.table("items").select("category").execute()
@@ -52,12 +79,9 @@ def generate_restaurant_embeddings():
         if not text_to_embed:
             continue
 
-        # Call OpenAI to get the embedding vector
+        # Generate embedding with retry logic
         try:
-            response = client.embeddings.create(input=text_to_embed,
-            model="text-embedding-3-small")
-            # The embedding array is usually at response["data"][0]["embedding"]
-            vector = response.data[0].embedding
+            vector = generate_embedding(text_to_embed)
         except Exception as e:
             print(f"Error generating embedding for row {row_id}: {e}")
             continue

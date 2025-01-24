@@ -1,4 +1,5 @@
 import os
+import time
 from pathlib import Path
 from openai import OpenAI
 from supabase import Client
@@ -17,6 +18,23 @@ if not OPENAI_API_KEY:
 
 # Instead of openai.OpenAI(...), just set your API key directly:
 client = OpenAI(api_key=OPENAI_API_KEY)
+
+def generate_embedding(text: str, max_retries: int = 3) -> list[float]:
+    """Generate embedding with retry logic."""
+    for attempt in range(max_retries):
+        try:
+            response = client.embeddings.create(
+                input=text,
+                model="text-embedding-3-small"
+            )
+            embedding = response.data[0].embedding
+            if len(embedding) != 1536:  # Validate dimension
+                raise ValueError(f"Expected 1536-dimensional embedding, got {len(embedding)}")
+            return embedding
+        except Exception as e:
+            if attempt == max_retries - 1:
+                raise
+            time.sleep(1)  # Wait before retry
 
 def handle_restaurant_request(body_text: str, user_id: str, supabase: Client) -> str:
     """
@@ -64,9 +82,7 @@ def handle_restaurant_request(body_text: str, user_id: str, supabase: Client) ->
         # STEP A: Create an embedding of the user's query
         user_query = body_text  # or parse out substring after "recommend"
         try:
-            embed_resp = client.embeddings.create(model="text-embedding-3-small",
-            input=user_query)
-            query_vec = embed_resp.data[0].embedding
+            query_vec = generate_embedding(user_query)
         except Exception as e:
             return f"Error generating embedding for query: {str(e)}"
 
@@ -99,11 +115,13 @@ def handle_restaurant_request(body_text: str, user_id: str, supabase: Client) ->
 
         # STEP D: Feed this into OpenAI for final RAG response
         try:
-            completion = client.completions.create(model="text-davinci-003",  # keep your chosen model
-            prompt=prompt_for_llm,
-            max_tokens=120,
-            temperature=0.7)
-            final_answer = completion.choices[0].text.strip()
+            completion = client.chat.completions.create(
+                model="gpt-4o-2024-08-06",
+                messages=[{"role": "user", "content": prompt_for_llm}],
+                max_tokens=120,
+                temperature=0.7
+            )
+            final_answer = completion.choices[0].message.content.strip()
             return final_answer
         except Exception as e:
             return f"Error calling LLM for final recommendation: {str(e)}"
