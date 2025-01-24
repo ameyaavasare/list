@@ -1,8 +1,6 @@
 import os
 from pathlib import Path
 from openai import OpenAI
-
-client = OpenAI(api_key=OPENAI_API_KEY)
 from supabase import Client
 from dotenv import load_dotenv
 
@@ -18,6 +16,7 @@ if not OPENAI_API_KEY:
     raise ValueError("OPENAI_API_KEY must be set in environment variables")
 
 # Instead of openai.OpenAI(...), just set your API key directly:
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 def handle_restaurant_request(body_text: str, user_id: str, supabase: Client) -> str:
     """

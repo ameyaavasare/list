@@ -1,21 +1,19 @@
 import os
 from openai import OpenAI
-
-client = OpenAI(api_key=OPENAI_API_KEY)
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
+load_dotenv()
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=OPENAI_API_KEY)
+
 def generate_restaurant_embeddings():
     # 1) Load environment variables
-    load_dotenv()
     SUPABASE_URL = os.getenv("SUPABASE_URL")
     SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
     if not SUPABASE_URL or not SUPABASE_KEY:
         raise ValueError("Missing Supabase credentials. Check your .env file.")
-    if not OPENAI_API_KEY:
-        raise ValueError("Missing OPENAI_API_KEY. Set it in your environment or .env file.")
 
     # 2) Initialize clients
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
